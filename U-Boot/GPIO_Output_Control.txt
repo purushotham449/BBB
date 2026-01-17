@@ -1,0 +1,90 @@
+Board: BeagleBone Black Wireless
+On-board user-controllable items:
+
+LEDs
+
+| LED  | Name          | GPIO     |
+| ---- | ------------- | -------- |
+| USR0 | Heartbeat     | GPIO1_21 |
+| USR1 | MMC           | GPIO1_22 |
+| USR2 | CPU           | GPIO1_23 |
+| USR3 | Ethernet/WiFi | GPIO1_24 |
+
+➡ All LEDs are active HIGH
+
+1. Enable GPIO Access in U-Boot
+
+=> help gpio
+
+    gpio input
+    gpio set
+    gpio clear
+    gpio toggle
+    gpio status
+
+2. Turn ON / OFF On-Board LEDs
+
+GPIO = (bank × 32) + pin
+
+# LED GPIO numbers
+
+| LED  | GPIO               |
+| ---- | ------------------ |
+| USR0 | 1×32 + 21 = **53** |
+| USR1 | 1×32 + 22 = **54** |
+| USR2 | 1×32 + 23 = **55** |
+| USR3 | 1×32 + 24 = **56** |
+
+# Turn LED ON
+
+=> gpio set 53   # USR0 ON
+=> gpio set 54   # USR1 ON
+=> gpio set 55   # USR2 ON
+=> gpio set 56   # USR3 ON
+
+# Turn LED OFF
+
+=> gpio clear 53
+=> gpio clear 54
+=> gpio clear 55
+=> gpio clear 56
+
+# Check LED GPIO status
+
+=> gpio status 53
+
+3. Simple LED Blink Test in U-Boot
+
+=> gpio set 55
+=> sleep 1
+=> gpio clear 55
+=> sleep 1
+=> gpio toggle 55
+
+4. Control LEDs Automatically via U-Boot Script
+
+# Example: Blink USR2 during boot
+
+=> setenv blink 'gpio set 55; sleep 1; gpio clear 55; sleep 1'
+=> run blink
+
+# To auto-run:
+
+=> setenv bootcmd 'run blink; run distro_bootcmd'
+=> saveenv
+
+Debug Tips (Important)
+
+✔ GPIO must not be claimed by pinmux earlier
+✔ U-Boot ignores Linux leds-gpio bindings
+✔ If LED doesn’t respond:
+
+=> gpio status -a
+
+Summary
+
+| Task        | Command               |
+| ----------- | --------------------- |
+| LED ON      | `gpio set <num>`      |
+| LED OFF     | `gpio clear <num>`    |
+| Blink       | `gpio toggle + sleep` |
