@@ -1,0 +1,104 @@
+Board: BeagleBone Black Wireless
+SoC: TI AM335x (pins are multi-function, selected via mux registers)
+
+Each physical pin can work as:
+
+    GPIO
+    UART/I2C/SPI/PWM
+    MMC/CAN/etc.
+
+This selection is done via Control Module Pad Configuration Registers.
+
+1. How Pin Mux Works on AM335x (Quick Theory)
+
+Each pin has a 32-bit pad control register:
+
+|31........7|6  |5  |4  |3  |2  |1  |   0|
+|  reserved |RX |PU |PD |PE |   MUXMODE  |
+
+# Important bits
+
+    MUXMODE (0–7) → selects function
+    PULLUP / PULLDOWN
+    RXACTIVE → needed for inputs
+
+2. Control Mux from U-Boot Using md / mw
+
+U-Boot does not provide a high-level pinmux command.
+You directly access registers using:
+
+    md → memory display
+    mw → memory write
+
+3. Find the Pin Mux Register Address
+
+    Control Module Base - 0x44E10000
+    Each pin has a fixed offset.
+
+4. Example: Configure a Header Pin (P9_12) as GPIO
+
+    | Header | SoC Pin   | Offset | GPIO     |
+    | ------ | --------- | ------ | -------- |
+    | P9_12  | gpmc_ad12 | 0x878  | GPIO1_28 |
+
+# Register address
+    0x44E10000 + 0x878 = 0x44E10878
+
+# Read current mux
+    => md 0x44E10878 1
+
+# Set GPIO mode (MUXMODE = 7)
+
+Value breakdown:
+    Mode 7 → GPIO
+    RX disabled
+    Pull disabled
+
+    => mw 0x44E10878 0x07
+
+# Control GPIO
+    => gpio set 60
+    => gpio clear 60
+
+5. Configure Input Pin with Pull-Up (BOOT Button Case)
+
+USER / BOOT Button:
+
+    GPIO0_31
+    Offset: 0x874
+
+Enable:
+
+    GPIO mode (7)
+    RXACTIVE
+    Pull-up enabled
+
+# Value:
+    MUXMODE=7
+    RXACTIVE=1 (bit5)
+    PULLUP enabled (bit4=1, bit3=0)
+
+# Hex value:
+    0x27
+
+# Read current mux
+    => md 0x44E10874 1
+
+# Apply:
+    => mw 0x44E10874 0x27
+    => gpio input 31
+
+6. Useful U-Boot Commands for Mux Debug
+
+    => md 0x44E10800 16     # dump multiple pad regs
+    => gpio status -a      # list all GPIOs
+
+Summary Cheat Sheet
+
+| Task         | Command                |
+| ------------ | ---------------------- |
+| Read mux     | `md <addr> 1`          |
+| Set mux      | `mw <addr> <val>`      |
+| GPIO mode    | MUXMODE = 7            |
+| Enable input | RXACTIVE = 1           |
+| GPIO control | `gpio set/clear/input` |
