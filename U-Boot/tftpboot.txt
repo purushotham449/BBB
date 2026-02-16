@@ -1,0 +1,102 @@
+The Beagle Bone Black Wireless board has WiFi support, but booting on NFS directly from the kernel (instead of using an initramfs) is another kind of challenge.
+
+Something easier to use is networking over USB device (also called USB gadget as our operating system is running on the USB device side), which is supported by both Linux and U-Boot.
+
+Note that the below instructions also work on the original Beagle Bone Black, bringing the convenience of not having to use an RJ45 cable. All you need is the USB device cable that you’re using for power supply too.
+
+1. Preparing U-Boot
+
+    Now, let’s configure networking in U-Boot:
+
+        ipaddr: IP address of the board
+        serverip: IP address of your PC or server
+
+        setenv ipaddr 192.168.0.100
+        setenv serverip 192.168.0.1
+
+    Make sure that this address belongs to a separate network segment from the one used by your PC to connect to the network.
+
+    We also need to configure Ethernet over USB device:
+
+        ethact: controls which interface is currently active.
+        usbnet_devaddr: MAC address on the device side
+        usbnet_hostaddr: MAC address on the host side 
+
+        setenv ethact usb_ether
+        setenv usbnet_devaddr f8:dc:7a:00:00:02
+        setenv usbnet_hostaddr f8:dc:7a:00:00:01
+        saveenv
+
+    Note that the above MAC addresses are arbitrary
+
+2. Configure your PC
+
+    To configure your network interface on the workstation side, we need to know the name of the network interface connected to your board.
+
+    However, you won’t be able to see the network interface corresponding to the Ethernet over USB device connection yet, because it’s only active when the board turns it on, from U-Boot or from Linux. When this happens, the network interface name will be enx. Given the value we gave to usbnet_hostaddr, it will therefore be enxf8dc7a000001.
+
+    Then, instead of configuring the host IP address from NetWork Manager’s graphical interface, let’s do it through its command line interface, which is so much easier to use:
+
+        nmcli con add type ethernet ifname enxf8dc7a000001 ip4 192.168.0.1/24
+
+    To download the kernel and device tree blob which are also on your PC, let’s install a TFTP server on it:
+
+    2.1 Identify the TFTP root directory (on host PC)
+        ps aux | grep tftpd
+
+        root       19100  0.0  0.0   4940   448 ?        Ss   21:33   0:00 /usr/sbin/in.tftpd --listen --user tftp --address :69 --secure /srv/tftp
+
+        TFTP root is:
+            /srv/tftp or 
+            /tftpboot
+
+    2.2 Place the file in the TFTP root (mandatory)
+        sudo cp textfile.txt /srv/tftp/
+        sudo chmod 644 /srv/tftp/textfile.txt
+
+    2.3 Verify file exists EXACTLY as requested
+        ls -l /srv/tftp/textfile.txt or 
+        ls -l /tftpboot/textfile.txt
+
+    2.4 Test TFTP locally on host (very important)
+        sudo apt-get install tftp-hpa
+        sudo apt-get install tftp
+        sudo tftp localhost
+        tftp> get textfile.txt
+        Received 7 bytes in 0.0 seconds
+        tftp> quit
+
+    2.5 Retry from U-Boot (board)
+        At U-Boot prompt:
+            => tftp 0x81000000 textfile.txt
+        using musb-hdrc, OUT ep1out IN ep1in STATUS ep2in
+        MAC f8:dc:7a:00:00:02
+        HOST MAC f8:dc:7a:00:00:01
+        RNDIS ready
+        high speed config #2: 2 mA, Ethernet Gadget, using RNDIS
+        USB RNDIS network up!
+        Using usb_ether device
+        TFTP from server 192.168.0.1; our IP address is 192.168.0.100
+        Filename 'textfile.txt'.
+        Load address: 0x81000000
+        Loading: #
+                2.9 KiB/s
+        done
+        Bytes transferred = 6 (6 hex)
+        => md 0x81000000
+        81000000: 6c6c6548 00000a6f 00000000 00000000    Hello...........
+        81000010: 00000000 00000000 00000000 00000000    ................
+        81000020: 00000000 00000000 00000000 00000000    ................
+        81000030: 00000000 00000000 00000000 00000000    ................
+        81000040: 00000000 00000000 00000000 00000000    ................
+        81000050: 00000000 00000000 00000000 00000000    ................
+        81000060: 00000000 00000000 00000000 00000000    ................
+        81000070: 00000000 00000000 00000000 00000000    ................
+        81000080: 00000000 00000000 00000000 00000000    ................
+        81000090: 00000000 00000000 00000000 00000000    ................
+        810000a0: 00000000 00000000 00000000 00000000    ................
+        810000b0: 00000000 00000000 00000000 00000000    ................
+        810000c0: 00000000 00000000 00000000 00000000    ................
+        810000d0: 00000000 00000000 00000000 00000000    ................
+        810000e0: 00000000 00000000 00000000 00000000    ................
+        810000f0: 00000000 00000000 00000000 00000000    ................
