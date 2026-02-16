@@ -1,0 +1,99 @@
+1. Host prerequisites
+    - (Do these on an Ubuntu/Debian host. For other distros adjust package manager names.)
+
+    # update + required packages (Ubuntu/Debian example)
+    sudo apt update
+    sudo apt install -y gawk wget git-core diffstat unzip texinfo gcc-multilib \
+    build-essential chrpath socat cpio python3 python3-pip python3-pexpect \
+    xz-utils debianutils iproute2 python3-git python3-jinja2 libegl1-mesa \
+    libsdl1.2-dev xterm
+
+2. Clone the Yocto reference (poky) and common layers
+    - Below uses the kirkstone branch as an example of a recent stable branch. 
+    - Swap branch name if you prefer a different release.
+
+    # choose a working directory
+    mkdir -p ~/yocto-bbb && cd ~/yocto-bbb
+
+    # clone poky (core)
+    git clone -b kirkstone https://git.yoctoproject.org/git/poky
+
+    # commonly used supporting layers
+    git clone -b kirkstone https://git.yoctoproject.org/git/meta-openembedded
+    git clone -b kirkstone https://git.yoctoproject.org/git/meta-virtualization
+
+3. Initialize build environment
+
+    # initialize the Yocto build environment
+    source poky/oe-init-build-env build
+    # You are now in the 'build' directory
+
+4. Configure bblayers.conf and local.conf
+
+    - Edit conf/bblayers.conf to include the layers you cloned. Example minimal bblayers.conf (inside build/conf/):
+
+    BBLAYERS ?= " \
+        /home/youruser/yocto-bbb/poky/meta \
+        /home/youruser/yocto-bbb/poky/meta-poky \
+        /home/ubuntu/yocto-bbb/poky/meta-yocto-bsp \
+        /home/youruser/yocto-bbb/meta-openembedded/meta-oe \
+        /home/youruser/yocto-bbb/meta-openembedded/meta-networking \
+        /home/youruser/yocto-bbb/meta-openembedded/meta-python \
+        "
+
+    Now open conf/local.conf and set common / recommended options. Key items:
+
+    # MACHINE: common choices include beaglebone / beaglebone-yocto / am335x-boneblack
+    MACHINE ?= "beaglebone-yocto"
+
+    # parallelism (adjust to CPU cores)
+    BB_NUMBER_THREADS ?= "6"
+    PARALLEL_MAKE ?= "-j 8"
+
+    # ================== FETCH RELIABILITY ==================
+    GIT_PROTOCOL = "https"
+
+    # ================== CACHES ==================
+    DL_DIR = "/home/ubuntu/yocto-cache/downloads"
+    SSTATE_DIR = "/home/ubuntu/yocto-cache/sstate"
+
+    # ================== BUILD SPEED ==================
+    INHERIT:remove = "rm_work"
+    DEBUG_BUILD = "0"
+
+Create them:
+    mkdir -p ~/yocto-cache/{downloads,sstate}
+
+5. Build the image
+    - Common minimal image:
+        bitbake core-image-minimal
+
+    - Build a more usable image (console + networking):
+        bitbake core-image-base
+        # or
+        bitbake console-image
+
+    - First build will take a while (many hours depending on hardware). 
+    - After the first build, sstate cache shortens rebuild times.
+
+6. Locate the generated artifacts
+    - After build completes, images are in:
+        build/tmp/deploy/images/<MACHINE>/
+
+    - Typical files you may find:
+
+        MLO-* (X-loader)
+        u-boot.img (u-boot)
+        core-image-minimal-<MACHINE>.tar.bz2 (rootfs tarball) or .wic/.sdimg depending on image type
+        Device tree blobs (*.dtb)
+    
+    - Verify the file exists
+        ls build/tmp/deploy/images/beaglebone-yocto/*.wic*
+
+
+7. Flash to microSD (boot from SD) — common method
+    - Insert SD card into host.
+    - Use the .wic/.sdimg if Yocto produced one (preferred if present)
+
+    - If Yocto produced a .wic or .sdimg, you can write it directly with dd:
+        sudo dd if=core-image-minimal-beaglebone-yocto.wic of=/dev/sdX bs=4M status=progress && sync
