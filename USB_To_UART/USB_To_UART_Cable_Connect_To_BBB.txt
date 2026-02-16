@@ -1,0 +1,18 @@
+Below pins on the serial header on the board are RX, TX and GND
+
+Pin Number 	Function
+1 	        GND
+4 	        RX
+5 	        TX
+
+The serial header has 6 pins, but we only need 3 of them. I numbered pins starting from 1, where the ping number 1 is the one closest to the power supply socket and the micro USB connector we use for power.
+
+The final question is what pins of the USB-to-UART converter are GND, RX and TX. Naturally, that depends on what cable you use, but in the one I have:
+
+    The black wire is GND
+    The green wire is cable TX (needs to be connected to the board RX)
+    The white wire is cable RX (needs to be connected to the board TX).
+
+Basically we need to connect three wires: RX, TX and GND. 
+GND of the USB-to-UART adapter has to be connected to the GND pin of the serial header on on the board. 
+USB-to-UART RX has to be connected to the board TX and USB-to-UART TX has to be connected to the board RX.
