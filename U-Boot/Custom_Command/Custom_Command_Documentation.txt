@@ -1,0 +1,499 @@
+1. BBB Boot Architecture (AM335x)
+
+                AM335x ROM
+                    │
+                    ▼
+            Load SPL (MLO)
+            From boot device
+                    │
+        ┌───────────┴───────────┐
+        │                       │
+        ▼                       ▼
+    SD Card (MMC1)         eMMC (MMC2)
+        │                       │
+        ▼                       ▼
+    U-Boot                U-Boot
+        │                       │
+        ▼                       ▼
+    Kernel (zImage)
+        │
+        ▼
+    Device Tree (.dtb)
+        │
+        ▼
+    Linux Kernel
+        │
+        ▼
+    Root Filesystem
+
+Boot priority:
+    1️⃣ eMMC (MMC2)
+    2️⃣ SD Card (MMC1)
+    3️⃣ UART
+
+| Boot log                   | Meaning           |
+| -------------------------- | ----------------- |
+| `Trying to boot from MMC1` | Booting from SD   |
+| `Trying to boot from MMC2` | Booting from eMMC |
+
+2. U-Boot Development Workflow (Yocto)
+
+    Modify U-Boot source
+            │
+            ▼
+    bitbake -f -c compile u-boot
+            │
+            ▼
+    bitbake u-boot
+            │
+            ▼
+    Deploy artifacts
+    build/tmp/deploy/images/beaglebone-yocto/
+            │
+            ├── MLO
+            ├── u-boot.img
+            ├── zImage
+            └── *.dtb
+            │
+            ▼
+    Copy to SD card
+            │
+            ▼
+    Boot BBB with BOOT button
+
+3. Debug Flow – Custom U-Boot Command
+
+    Command not working?
+        │
+        ▼
+    Check binary contains command
+            │
+            ├─ nm u-boot | grep ledtest
+            │
+            ▼
+    Symbol exists?
+            │
+    YES ──────► Board using wrong U-Boot
+    NO
+            │
+            ▼
+    Check U_BOOT_CMD macro
+
+4. Debug Flow – Boot Source
+
+    Board boot log shows:
+    Trying to boot from MMC2 ?
+            │
+            ▼
+    Booting from eMMC
+            │
+            ▼
+    Hold BOOT button
+            │
+            ▼
+    Expect:
+    Trying to boot from MMC1
+
+    Meaning:
+
+        | Boot message | Source  |
+        | ------------ | ------- |
+        | MMC1         | SD card |
+        | MMC2         | eMMC    |
+
+5. Debug Flow – SPL Boot Loop
+
+    SPL prints repeatedly:
+    Trying to boot from MMC2
+            │
+            ▼
+    Cause:
+    U-Boot image corrupted or truncated
+            │
+            ▼
+    Check filesize
+    filesize / 512
+            │
+            ▼
+    Rewrite u-boot.img with correct block count
+
+    Calculate correct sector count:
+
+        filesize / 512
+
+    Example:
+
+        1225400 / 512 ≈ 2394 sectors (0x95A)
+
+    Correct command:
+
+        mmc write 0x82000000 0x300 0x95A
+
+6. Flashing U-Boot to eMMC
+
+    Boot from SD
+            │
+            ▼
+    Load SPL
+    fatload mmc 0:1 0x82000000 MLO
+            │
+            ▼
+    Write SPL
+    mmc write 0x82000000 0x100 0x100
+            │
+            ▼
+    Load U-Boot
+    fatload mmc 0:1 0x82000000 u-boot.img
+            │
+            ▼
+    Compute sector count
+    filesize / 512
+            │
+            ▼
+    Write U-Boot
+    mmc write 0x82000000 0x300 <sectors>
+
+7. Debug Flow – Kernel Boot Failure
+
+    Kernel fails to boot?
+            │
+            ▼
+    Error:
+    Unable to read *.dtb
+            │
+            ▼
+    Missing Device Tree
+            │
+            ▼
+    Copy DTB to boot partition
+
+    Example:
+        am335x-boneblack-wireless.dtb
+
+8. Boot Partition Layout (BBB SD Card)
+
+SD Card
+│
+├── MLO
+├── u-boot.img
+├── zImage
+├── am335x-boneblack-wireless.dtb
+└── extlinux/
+     └── extlinux.conf
+
+9. Key Debug Commands
+
+    Check U-Boot version
+        => version
+    
+    Check MMC devices
+        => mmc list
+    
+    Inspect partitions
+        => mmc part
+    
+    List boot files
+        => fatls mmc 0:1
+    
+    Verify command compiled
+        nm u-boot | grep ledtest
+
+10. Typical BBB Bring-Up Cycle
+
+    Edit U-Boot code
+        │
+        ▼
+    bitbake -c cleansstate u-boot && bitbake u-boot
+        │
+        ▼
+    Copy MLO + u-boot.img to SD
+        │
+        ▼
+    BOOT button → power on
+        │
+        ▼
+    Test commands
+    
+    Verify Custom Command
+
+        Interrupt autoboot:
+    
+            => help ledtest
+
+        Run command:
+
+            => ledtest
+                LED test command executed
+
+
+11. Final Verified Boot Log
+
+    U-Boot SPL 2022.01
+    Trying to boot from MMC1
+
+    U-Boot 2022.01
+    Loading zImage
+    Loading am335x-boneblack-wireless.dtb
+    Starting kernel...
+
+12. Integrate Changes via Yocto Layer
+
+    12.1 Create the Layer Properly (Recommended)
+
+        Instead of manually creating folders, use Yocto’s command:
+
+            bitbake-layers create-layer meta-custom
+
+        This will generate:
+
+            meta-custom/
+            ├── conf/
+            │   └── layer.conf
+            ├── recipes-example/
+            └── COPYING.MIT
+ 
+    12.2 Add Your Layer
+
+        Run:
+
+            bitbake-layers add-layer ../meta-custom
+
+        Then verify again:
+
+            bitbake-layers show-layers
+        
+        Ensure Correct Directory Layout
+
+            Your layer must look like:
+
+                meta-custom-uboot/
+                ├── conf/layer.conf
+                └── recipes-bsp/u-boot/
+                    ├── u-boot_%.bbappend
+                    └── files/
+                        ├── cmd_ledtest.c
+                        └── patch files
+
+    12.3 Show layers
+
+        bitbake-layers show-layers
+
+            meta-custom   /home/ubuntu/yocto-bbb/meta-custom
+
+    12.4 Verify Yocto Now Sees Your Files
+
+        Run:
+
+            bitbake -e u-boot | grep FILESPATH
+
+        You should now see something like:
+
+            meta-custom/recipes-bsp/u-boot/files
+
+        Create Patch
+
+            Now generate a patch from your U-Boot tree:
+
+                git add cmd/cmd_ledtest.c cmd/Kconfig cmd/Makefile configs/am335x_evm_defconfig
+                git commit -s -m "cmd: add ledtest command for BBB"
+                git format-patch -1
+
+            Example output:
+
+                0001-cmd-add-ledtest-command.patch
+        
+        Add Patch to Yocto Layer
+
+            Directory layout:
+
+                meta-custom-uboot
+                └── recipes-bsp
+                    └── u-boot
+                        ├── u-boot_%.bbappend
+                        └── files
+                            └── 0001-cmd-add-ledtest-command.patch
+
+        bbappend
+
+            u-boot_%.bbappend
+
+                FILESEXTRAPATHS:prepend := "${THISDIR}/files:"
+
+                SRC_URI += "file://0001-cmd-add-ledtest-command.patch"
+
+            That’s it. No cp, echo, or printf.
+
+    12.5 Check if object is compiled
+
+        Go to the build directory:
+
+            cd build/tmp/work/beaglebone_yocto-poky-linux-gnueabi/u-boot/1_2022.01-r0/git
+
+        Then check:
+
+            find . -name cmd_ledtest.o
+
+        If no .o file exists, the source is not part of the build.
+
+    12.6 Verify compile log
+
+        Check:
+
+            grep CMD_LEDTEST build/tmp/work/*/u-boot/*/build/.config
+
+        You should see:
+
+            CONFIG_CMD_LEDTEST=y
+
+        Check compile log:
+
+            cat build/tmp/work/*/u-boot/*/temp/log.do_compile | grep ledtest
+
+        You should see something like:
+
+            CC      cmd/cmd_ledtest.o
+
+        checks:
+
+        strings u-boot.img | grep ledtest
+            ledtest
+
+    12.7 Verify command symbol exists
+
+        Check inside the binary:
+
+            nm u-boot | grep ledtest
+
+        Expected something like:
+
+            do_ledtest
+            __u_boot_cmd_ledtest
+
+        If __u_boot_cmd_ledtest is missing → command not registered.
+
+        Confirm command table
+
+        Check:
+
+            strings u-boot | grep U_BOOT_CMD
+
+        or
+
+            nm u-boot | grep __u_boot_cmd
+
+        Example expected entries:
+
+            __u_boot_cmd_help
+            __u_boot_cmd_gpio
+            __u_boot_cmd_i2c
+            __u_boot_cmd_ledtest
+
+13. Flash U-Boot to eMMC (Optional)
+
+    Once verified from SD, install to eMMC.
+
+    Load SPL from SD
+
+        mmc dev 0
+        fatload mmc 0:1 0x82000000 MLO
+        mmc dev 1
+        mmc write 0x82000000 0x100 0x100
+
+    Load U-Boot
+
+        mmc dev 0
+        fatload mmc 0:1 0x82000000 u-boot.img
+
+    Compute sector count:
+
+        sectors = filesize / 512
+
+    Write to eMMC:
+
+        mmc dev 1
+        mmc write 0x82000000 0x300 <sector_count>
+
+    Reboot:
+
+        reset
+
+14. Verify eMMC Boot
+
+    U-Boot SPL 2022.01
+    Trying to boot from MMC2
+
+    U-Boot 2022.01
+
+    MMC2 = eMMC
+
+15. Debug Commands
+
+    List MMC devices:
+
+        => mmc list
+
+    Check partitions:
+
+        => mmc part
+
+    List boot files:
+
+        => fatls mmc 0:1
+
+    Check U-Boot version:
+
+        => version
+
+    Verify command compiled:
+
+        nm u-boot | grep ledtest
+
+16. Best Development Practice
+
+    During development:
+
+        ✔ Boot from SD
+        ✔ Test U-Boot changes
+        ✔ Verify kernel + DTB
+        ✔ Then flash to eMMC
+
+17. Final Verified Boot Example
+
+    U-Boot SPL 2022.01
+    Trying to boot from MMC1
+
+    U-Boot 2022.01
+    Loading zImage
+    Loading am335x-boneblack-wireless.dtb
+    Starting kernel...
+
+18. If you want to use your Yocto U-Boot
+
+    You must either:
+
+    Option A — Force SD boot
+
+        Hold the BOOT button during power-on.
+
+    Option B — Flash U-Boot to eMMC
+
+        Copy Yocto build files:
+
+            MLO
+            u-boot.img
+
+        to the eMMC boot partition.
+
+    Option C — Remove eMMC bootloader (development trick)
+        sudo dd if=/dev/zero of=/dev/mmcblk0 bs=1M count=10
+
+    Then the ROM will always try SD.
+
+
+19. Quick Boot Debug Checklist
+
+    1. Is SPL loading?
+    2. Which device is booting (MMC1/MMC2)?
+    3. Is U-Boot version correct?
+    4. Are kernel and DTB present?
+    5. Does extlinux.conf match filenames?
