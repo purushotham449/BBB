@@ -21,6 +21,8 @@
     # commonly used supporting layers
     git clone -b kirkstone https://git.yoctoproject.org/git/meta-openembedded
     git clone -b kirkstone https://git.yoctoproject.org/git/meta-virtualization
+    git clone -b kirkstone git://git.yoctoproject.org/meta-ti
+    git clone -b kirkstone https://git.yoctoproject.org/meta-arm
 
 3. Initialize build environment
 
@@ -39,6 +41,10 @@
         /home/youruser/yocto-bbb/meta-openembedded/meta-oe \
         /home/youruser/yocto-bbb/meta-openembedded/meta-networking \
         /home/youruser/yocto-bbb/meta-openembedded/meta-python \
+        /home/youruser/yocto-bbb/meta-arm/meta-arm-toolchain \
+        /home/youruser/yocto-bbb/meta-arm/meta-arm \
+        /home/youruser/yocto-bbb/meta-ti/meta-ti-bsp \
+        /home/youruser/yocto-bbb/meta-ti/meta-ti-extras \
         "
 
     Now open conf/local.conf and set common / recommended options. Key items:
@@ -46,6 +52,8 @@
     # MACHINE: common choices include beaglebone / beaglebone-yocto / am335x-boneblack
     MACHINE ?= "beaglebone-yocto"
 
+    PREFERRED_PROVIDER_virtual/kernel = "linux-ti-staging"
+    
     # parallelism (adjust to CPU cores)
     BB_NUMBER_THREADS ?= "6"
     PARALLEL_MAKE ?= "-j 8"
@@ -65,6 +73,8 @@ Create them:
     mkdir -p ~/yocto-cache/{downloads,sstate}
 
 5. Build the image
+
+    bitbake -c cleansstate virtual/kernel
     - Common minimal image:
         bitbake core-image-minimal
 
@@ -72,6 +82,8 @@ Create them:
         bitbake core-image-base
         # or
         bitbake console-image
+        # or
+        bitbake core-image-full-cmdline
 
     - First build will take a while (many hours depending on hardware). 
     - After the first build, sstate cache shortens rebuild times.
