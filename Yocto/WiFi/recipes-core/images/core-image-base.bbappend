@@ -1,0 +1,1 @@
+IMAGE_BOOT_FILES:append = " am335x-boneblack-wireless.dtb"

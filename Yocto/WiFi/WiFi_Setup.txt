@@ -1,0 +1,98 @@
+Edit:
+
+    vi conf/local.conf
+
+Add:
+
+    IMAGE_INSTALL:append = " \
+        linux-firmware \
+        wpa-supplicant \
+        iw \
+    "
+
+Enable:
+
+Device Drivers  --->
+  Network device support  --->
+    Wireless LAN  --->
+      <M> TI wlcore support
+      <M> TI wl18xx support
+      <*> cfg80211
+      <*> mac80211
+
+Check in your DT:
+    grep wl18 tmp/work-shared/beaglebone-yocto/kernel-source/arch/arm/boot/dts/am335x-boneblack-wireless.dts
+
+You must see something like:
+    &mmc3 {
+        status = "okay";
+
+        wlcore: wlcore@0 {
+            compatible = "ti,wl1835";
+        };
+    };
+
+mkdir -p meta-custom/recipes-kernel/linux/files
+vi meta-custom/recipes-kernel/linux/files/wifi.cfg
+
+vi meta-custom/recipes-kernel/linux/linux-ti-staging_%.bbappend
+
+Step 1: Bring interface UP
+    ip link set wlan0 up
+
+Step 2: Kill existing wpa_supplicant
+    killall wpa_supplicant
+    rm -rf /var/run/wpa_supplicant
+
+Step 3: Fix config file
+
+    Edit:
+
+        vi /etc/wpa_supplicant.conf
+        Minimal working config:
+        ctrl_interface=/var/run/wpa_supplicant
+        update_config=1
+
+        network={
+            ssid="YOUR_WIFI_NAME"
+            psk="YOUR_PASSWORD"
+        }
+
+Step 4: Start wpa_supplicant properly
+    wpa_supplicant -B -i wlan0 -c /etc/wpa_supplicant.conf
+
+Step 5: Verify connection
+    iw dev wlan0 link
+
+    Expected:
+
+        Connected to <SSID> ✅
+
+Step 6: Get IP
+    udhcpc -i wlan0
+
+Step 7: Verify IP
+    ip addr show wlan0
+
+Quick validation (just to confirm internet)
+
+    Run:
+
+        ping -c 3 8.8.8.8
+        ping -c 3 google.com
+
+Add to image
+
+    Edit:
+
+        vi conf/local.conf
+
+    Add:
+
+        IMAGE_INSTALL:append = " wifi-init wpa-supplicant iw"
+
+Ensure firmware included
+
+    (Already mostly done)
+
+    IMAGE_INSTALL:append = " linux-firmware"
