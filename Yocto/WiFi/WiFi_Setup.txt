@@ -96,3 +96,34 @@ Ensure firmware included
     (Already mostly done)
 
     IMAGE_INSTALL:append = " linux-firmware"
+
+Rebuild kernel (force)
+    bitbake -c cleansstate virtual/kernel
+    bitbake core-image-base
+
+Verify build output
+
+    After build:
+
+    find tmp/work -iname "wl18xx.ko"
+
+    Expected:
+        .../wl18xx.ko ✅
+        .../wlcore.ko ✅
+
+Flash & boot
+
+Then on target:
+
+    ls /lib/modules/$(uname -r)/kernel/drivers/net/wireless/ti/
+    
+    Expected:
+        wlcore/
+        wl18xx/
+
+Load driver
+    modprobe wl18xx
+    ip link show
+    
+    Expected:
+        wlan0 ✅

@@ -1,0 +1,18 @@
+diff --git a/arch/arm/boot/dts/am335x-boneblack-wireless.dts b/arch/arm/boot/dts/am335x-boneblack-wireless.dts
+index 207d2b63e0eb..4a437be3dbe9 100644
+--- a/arch/arm/boot/dts/am335x-boneblack-wireless.dts
++++ b/arch/arm/boot/dts/am335x-boneblack-wireless.dts
+@@ -109,3 +109,13 @@ ls-buf-en-hog {
+ 		line-name = "LS_BUF_EN";
+ 	};
+ };
++
++
++&i2c2 {
++    status = "okay";
++
++    rtc@68 {
++        compatible = "dallas,ds3231";
++        reg = <0x68>;
++    };
++};

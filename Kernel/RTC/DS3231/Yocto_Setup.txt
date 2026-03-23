@@ -1,0 +1,71 @@
+Method: bbappend + DTS patch (Recommended)
+
+📁 Step 1: Create folder structure
+    meta-custom/
+    └── recipes-kernel/
+        └── linux/
+            ├── linux-ti-staging_%.bbappend
+            └── files/
+                └── 0001-add-ds3231-rtc.patch
+
+📄 Step 2: Create bbappend
+    vi meta-custom/recipes-kernel/linux/linux-ti-staging_%.bbappend
+    Add:
+        FILESEXTRAPATHS:prepend := "${THISDIR}/files:"
+
+        SRC_URI += "file://0001-add-ds3231-rtc.patch"
+
+🧾 Step 3: Create DTS Patch
+    vi meta-custom/recipes-kernel/linux/files/0001-add-ds3231-rtc.patch
+
+    ✅ Patch content
+        From 000000000000000000000 Mon Sep 17 00:00:00 2001
+        Subject: [PATCH] arm: dts: am335x-boneblack-wireless: add DS3231 RTC
+
+        ---
+        arch/arm/boot/dts/am335x-boneblack-wireless.dts | 10 ++++++++++
+        1 file changed, 10 insertions(+)
+
+        diff --git a/arch/arm/boot/dts/am335x-boneblack-wireless.dts b/arch/arm/boot/dts/am335x-boneblack-wireless.dts
+        index XXXXXXX..YYYYYYY 100644
+        --- a/arch/arm/boot/dts/am335x-boneblack-wireless.dts
+        +++ b/arch/arm/boot/dts/am335x-boneblack-wireless.dts
+        @@ -XXX,6 +XXX,16 @@
+        
+        &i2c2 {
+            status = "okay";
+        +
+        +    rtc@68 {
+        +        compatible = "dallas,ds3231";
+        +        reg = <0x68>;
+        +    };
+        };
+
+    🧠 How to get correct patch offsets (IMPORTANT)
+
+    Instead of guessing XXX, do:
+
+        bitbake -c devshell virtual/kernel
+
+    Then:
+
+        cd ${S}
+        vi arch/arm/boot/dts/am335x-boneblack-wireless.dts
+
+    Add node → then:
+
+        git diff > 0001-add-ds3231-rtc.patch
+
+    👉 Copy that patch to your layer
+
+🔁 Step 4: Rebuild
+    bitbake -c cleansstate virtual/kernel
+    bitbake core-image-base
+
+🚀 Step 5: Deploy minimal
+    scp tmp/deploy/images/beaglebone-yocto/am335x-boneblack-wireless.dtb root@<BBB_IP>:/boot/
+    reboot
+    
+    ✅ Expected Result
+        dmesg | grep rtc
+            rtc-ds1307 2-0068: registered as rtc1

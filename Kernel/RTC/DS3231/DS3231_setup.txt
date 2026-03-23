@@ -1,0 +1,147 @@
+DS3231 RTC full Linux bring-up (production level) on BBBW.
+
+    ✔ Enable DS3231 in Device Tree
+    ✔ Bind Linux driver (rtc-ds1307)
+    ✔ Get /dev/rtc1
+    ✔ Sync time using hwclock
+    ✔ Make it persistent across reboot
+    ✔ Integrate in Yocto image
+
+Step 1: Verify Hardware (already done)
+
+    From your logs:
+
+    i2cdetect -y 2
+    → 0x68 present
+
+    👉 DS3231 default address = 0x68 ✅
+
+    scan:
+
+        i2c-2 → address 0x68 (shown as UU) ✅
+
+    👉 This means:
+
+        ✔ DS3231 is on I2C bus 2
+        ✔ BUT already claimed by a driver ("UU")
+
+Step 2: Enable RTC in Device Tree
+
+    Edit DTS
+
+    Path:
+
+        tmp/work-shared/beaglebone-yocto/kernel-source/arch/arm/boot/dts/am335x-boneblack-wireless.dts
+    
+    Add under I2C2 (or correct bus)
+        &i2c2 {
+            status = "okay";
+            clock-frequency = <100000>;
+
+            rtc@68 {
+                compatible = "dallas,ds3231";
+                reg = <0x68>;
+            };
+        };
+Step 3: Enable:
+
+    Device Drivers →
+    RTC →
+        I2C RTC drivers →
+        <*> Dallas DS1307/DS1337/DS3231
+      
+    Rebuild Kernel
+        bitbake -c cleansstate virtual/kernel
+        bitbake virtual/kernel
+        bitbake core-image-base
+
+Step 4: Boot & Verify
+    ✅ Check RTC device
+        ls /dev/rtc*
+
+    Expected:
+
+        /dev/rtc0  /dev/rtc1
+    
+    ✅ Check driver binding
+        dmesg | grep rtc
+
+    Expected:
+
+        rtc-ds1307 2-0068: registered as rtc1
+
+Step 5: Test RTC
+    
+    Read time
+        hwclock -r -f /dev/rtc1
+    
+    Set RTC time
+        date -s "2026-03-22 20:30:00"
+        hwclock -w -f /dev/rtc1
+    
+    Verify
+        hwclock -r -f /dev/rtc1
+
+Step 6: Sync RTC ↔ System Time
+    At boot (important)
+
+    Create script:
+
+        vi /etc/init.d/rtc-sync.sh
+        #!/bin/sh
+        hwclock -s -f /dev/rtc1
+        chmod +x /etc/init.d/rtc-sync.sh
+        echo "/etc/init.d/rtc-sync.sh" >> /etc/rc.local
+
+Step 7: Yocto Integration (Proper Way)
+
+    Create recipe
+        meta-custom/recipes-core/rtc/rtc-init.bb
+    
+    Add:
+    
+        SUMMARY = "RTC init script"
+
+        SRC_URI += "file://rtc-sync.sh"
+
+        do_install() {
+            install -d ${D}/etc/init.d
+            install -m 0755 ${WORKDIR}/rtc-sync.sh ${D}/etc/init.d/rtc-sync.sh
+        }
+        Add to image
+        IMAGE_INSTALL:append = " rtc-init"
+
+Quick Debug Trick
+
+    Force probe from user-space:
+
+        echo ds3231 0x68 > /sys/class/i2c-adapter/i2c-2/new_device
+
+    👉 Then check:
+
+        dmesg | grep rtc
+
+Immediate Debug (no rebuild)
+
+    Let’s confirm what driver is bound 👇
+
+    Check device
+        ls /sys/bus/i2c/devices/
+
+    Look for:
+
+        2-0068
+    
+    Then:
+        ls /sys/bus/i2c/devices/2-0068/
+
+    👉 Check driver:
+
+        readlink /sys/bus/i2c/devices/2-0068/driver
+
+    Make RTC default system clock
+    At boot:
+        hwclock -s -f /dev/rtc1
+    
+    Save time:
+        hwclock -w -f /dev/rtc1

@@ -1,0 +1,93 @@
+Hardware Setup (DS3231 + BBBW)
+
+| DS3231 | BBBW Pin         |
+| ------ | ---------------- |
+| VCC    | P9_3 (3.3V)      |
+| GND    | P9_1 (GND)       |
+| SDA    | P9_20 (I2C2_SDA) |
+| SCL    | P9_19 (I2C2_SCL) |
+
+Notes
+    DS3231 supports 3.3V → safe
+    Module usually has pull-ups already
+    Backup battery keeps time even when power OFF
+
+I2C Address
+    DS3231 address = 0x68
+
+U-Boot I2C Test
+    
+    Select bus
+        => i2c dev 2
+    
+    Probe
+        => i2c probe
+
+    Expected:
+    68
+
+DS3231 Register Map
+
+    | Register | Address | Description  |
+    | -------- | ------- | ------------ |
+    | Seconds  | 0x00    | BCD          |
+    | Minutes  | 0x01    | BCD          |
+    | Hours    | 0x02    | BCD          |
+    | Day      | 0x03    | Day of week  |
+    | Date     | 0x04    | Day of month |
+    | Month    | 0x05    | Month        |
+    | Year     | 0x06    | Year         |
+
+Read Time from U-Boot
+    
+    Set offset length
+        => i2c olen 0x68 1
+    
+    Read all time registers
+        => i2c md 0x68 0x00 7
+    
+    Example Output
+        0000: 25 59 14 03 17 03 26
+
+Decode (BCD → Decimal)
+
+    DS3231 uses BCD format
+
+    Example decode
+
+        Seconds = 0x25 → 25
+        Minutes = 0x59 → 59
+        Hours   = 0x14 → 14
+        Date    = 0x17 → 17
+        Month   = 0x03 → March
+        Year    = 0x26 → 2026
+
+    BCD formula
+        Decimal = (upper_nibble × 10) + lower_nibble
+
+Set Time from U-Boot
+    
+    Example: Set 12:34:56
+        => i2c mw 0x68 0x00.1 0x56
+        => i2c mw 0x68 0x01.1 0x34
+        => i2c mw 0x68 0x02.1 0x12
+    
+    Set date (17 Mar 2026)
+        => i2c mw 0x68 0x04.1 0x17
+        => i2c mw 0x68 0x05.1 0x03
+        => i2c mw 0x68 0x06.1 0x26
+
+Run
+    => rtcshow
+
+Final System
+
+    DS3231 (RTC)
+        ↓
+    I2C (0x68)
+        ↓
+    U-Boot reads registers
+        ↓
+    BCD decode
+        ↓
+    Human-readable time
