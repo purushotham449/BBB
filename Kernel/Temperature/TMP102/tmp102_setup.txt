@@ -1,0 +1,164 @@
+TMP102 full Linux bring-up (production level) on BBBW.
+
+    ✔ Enable TMP102 in Device Tree
+    ✔ Bind Linux driver (tmp102)
+    ✔ Integrate in Yocto image
+
+| TMP102 Pin | BBB Pin |
+| ---------- | ------- |
+| VCC        | P9_3    |
+| GND        | P9_1    |
+| SDA        | P9_20 |
+| SCL        | P9_19 |
+
+Step 1: Verify Hardware
+
+Run:
+    i2cdetect -y -r 2
+
+     0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f
+00:                         -- -- -- -- -- -- -- -- 
+10: -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- 
+20: -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- 
+30: -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- 
+40: -- -- -- -- -- -- -- -- 48 -- -- -- -- -- -- -- 
+50: -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- 
+60: -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- 
+70: -- -- -- -- -- -- -- -- 
+
+Expected:
+    48
+
+TMP102 default I2C address = 0x48
+
+Interpretation:
+    Output	Meaning
+    48	    Device detected (OK)
+    UU	    Driver already bound
+    Empty	❌ Pinmux / wiring issue
+
+2: Enable TMP102 in Device Tree
+
+    Edit DTS:
+    arch/arm/boot/dts/am335x-boneblack-wireless.dts
+
+Add:
+
+    &i2c2 {
+        status = "okay";
+
+        tmp108@48 {
+            compatible = "ti,tmp102";
+            reg = <0x48>;
+        };
+    };
+
+Step 3: Enable Kernel Driver
+
+    Enable:
+        Device Drivers →
+        Hardware Monitoring support →
+            <*> Texas Instruments TMP102
+
+    Or via Yocto config:
+        CONFIG_SENSORS_TMP102=y
+
+    Check build log
+        grep TMP108 tmp/work/*/linux*/temp/log.do_compile
+
+    Check compiled object
+        strings tmp/work/*/linux*/build/drivers/hwmon/tmp102.o | grep TMP108
+    
+    Runtime log
+        dmesg | grep TMP108
+    
+    CONFIG CHANGES
+        ✏️ Add config fragment
+
+        meta-custom/recipes-kernel/linux/files/tmp108.cfg
+            CONFIG_HWMON=y
+            CONFIG_SENSORS_TMP102=y
+    
+    ✅ Verify config applied
+        (Build-time)
+            bitbake -e virtual/kernel | grep TMP102
+
+    Rebuild:
+
+        bitbake -c cleansstate virtual/kernel
+        bitbake virtual/kernel
+        bitbake core-image-base
+
+Step 4: Boot & Verify
+    🔍 Check driver binding
+        dmesg | grep tmp
+    
+    Expected:
+        tmp102 2-0048: initialized
+    
+    🔍 Check device
+        ls /sys/bus/i2c/devices/2-0048
+
+    Expected:
+
+        2-0048
+
+    Check hwmon
+        ls /sys/class/hwmon/
+
+    Expected:
+
+        hwmon0
+    
+    If missing:
+
+    Manual bind (test)
+        echo tmp102 > /sys/bus/i2c/devices/2-0048/driver_override
+        echo 2-0048 > /sys/bus/i2c/drivers/tmp102/bind
+
+    Check kernel config
+        zcat /proc/config.gz | grep TMP
+
+    👉 Expect:
+
+        CONFIG_SENSORS_TMP102=y
+
+Step 5: Read Temperature
+    cat /sys/class/hwmon/hwmon0/temp1_input
+    
+    Example output:
+        28500
+
+    👉 Means:
+
+        28.5 °C
+
+Step 6: Debug / Force Probe
+
+    If not auto-detected:
+        echo tmp102 0x48 > /sys/class/i2c-adapter/i2c-2/new_device
+    
+    Check:
+        dmesg | grep tmp
+
+Step 7: Raw I2C Read (Low-Level Debug)
+    i2cget -y 2 0x48 0x00 w
+
+    👉 Reads temperature register
+
+✅ Step 8: Yocto Integration (Production)
+
+    📁 Create recipe
+        meta-custom/recipes-core/tmp102/tmp102-init.bb
+    Add:
+        SUMMARY = "TMP102 init script"
+
+        SRC_URI += "file://tmp102.sh"
+
+        do_install() {
+            install -d ${D}/etc/init.d
+            install -m 0755 ${WORKDIR}/tmp102.sh ${D}/etc/init.d/tmp102.sh
+        }
+    
+    Script (optional logging)
+        >> /etc/rc.local
