@@ -1,0 +1,211 @@
+Display OLED I2C 0.96" SSD1306
+
+The color of the OLED screen on the product can be:
+    - White
+    - Blue
+
+FEATURES
+    Screen diagonal: 0.96" wide
+    Current consumption: ~20 mA (depending on active pixels)
+    Logic voltage level: 5V (on I2C header)
+    Operating voltage: 5V (onboard regulator for 3.3V)
+    Communication: I2C (address: 0x3C)
+    Connectors: easyC x2
+    Optional white pixel color
+
+SSD1306 OLED (I2C) Full Linux Bring-up on BBBW
+
+    ✔ Device Tree enable
+    ✔ Kernel vs Userspace approach
+    ✔ Python driver (recommended)
+    ✔ Display test
+    ✔ Yocto integration
+    ✔ Debug + validation
+
+Step 1: Verify Hardware
+    
+    🔌 Wiring (I2C2 – BBBW)
+
+    | OLED Pin | BBB Pin |
+    | -------- | ------- |
+    | VCC      | 3.3V    |
+    | GND      | GND     |
+    | SCL      | P9_19   |
+    | SDA      | P9_20   |
+
+Detect device
+    i2cdetect -y -r 2
+
+Expected:
+    3c
+
+👉 SSD1306 default address = 0x3C
+
+Interpretation
+
+    | Output | Meaning                 |
+    | ------ | ----------------------- |
+    | `3c`   | Device detected ✅       |
+    | `UU`   | Driver bound            |
+    | Empty  | ❌ Pinmux / wiring issue |
+
+Step 2: Device Tree Configuration (Optional)
+
+    Minimal DTS (safe)
+
+    &i2c2 {
+        status = "okay";
+
+        oled@3c {
+            compatible = "solomon,ssd1306";
+            reg = <0x3c>;
+        };
+    };
+
+    👉 This only registers device (no kernel driver binding)
+
+    Important
+        DO NOT use framebuffer driver (ssd1306fb) on BBB
+
+    👉 Causes:
+
+        Kernel hang ❌
+        LCDC conflicts ❌
+        Power/reset issues ❌
+
+Step 3: Kernel Config
+
+    CONFIG_I2C=y
+    CONFIG_I2C_CHARDEV=y
+
+    Optional (NOT recommended):
+        CONFIG_FB_SSD1307=y   ❌ avoid
+
+Step 4: Verify I2C in Linux
+
+    ls /sys/bus/i2c/devices/2-003c
+
+    Expected:
+        2-003c
+
+Step 5: Low-Level I2C Validation
+    
+    Turn display OFF
+        i2cset -y 2 0x3c 0x00 0xAE
+    
+    Turn display ON
+        i2cset -y 2 0x3c 0x00 0xAF
+    
+    Expected:
+
+        ✔ No error
+        ✔ Display reacts
+
+    🚨 If fails
+
+    👉 Fix:
+
+        Reduce I2C speed (50kHz)
+        Add pull-ups (4.7kΩ)
+        Check power (3.3V)
+
+Step 6: Python Driver (Recommended)
+    
+    Install minimal dependencies
+        pip3 install --no-deps luma.oled luma.core pillow smbus2
+        pip3 install cbor2 wrapt deprecated pyserial
+
+Step 7: Basic Display Test
+    📁 oled_test.py
+
+        from luma.core.interface.serial import i2c
+        from luma.oled.device import ssd1306
+        from luma.core.render import canvas
+        from PIL import ImageFont
+        import time
+
+        serial = i2c(port=2, address=0x3C)
+        device = ssd1306(serial)
+
+        font = ImageFont.load_default()
+
+        while True:
+            with canvas(device) as draw:
+                draw.text((10, 20), "OLED OK", fill=255)
+            time.sleep(1)
+
+    Run:
+        python3 oled_test.py
+
+    Expected:
+        ✔ Text visible continuously
+
+Step 8: Centered + Large Text
+
+    from PIL import ImageFont
+
+    font = ImageFont.truetype("/usr/share/fonts/DejaVuSans-Bold.ttf", 20)
+
+    with canvas(device) as draw:
+        text = "HELLO"
+        w, h = draw.textbbox((0,0), text, font=font)[2:]
+        draw.text(((128-w)//2, (64-h)//2), text, font=font, fill=255)
+
+Step 9: Yocto Integration (Optional)
+    Add packages:
+        IMAGE_INSTALL:append = " \
+            python3 \
+            python3-pip \
+        "
+    Add script via recipe:
+        meta-custom/recipes-apps/oled/oled.bb
+
+            SUMMARY = "OLED Display App"
+
+            SRC_URI += "file://oled_test.py"
+
+            do_install() {
+                install -d ${D}/usr/bin
+                install -m 0755 ${WORKDIR}/oled_test.py ${D}/usr/bin/oled_test.py
+            }
+
+Step 10: Auto Start on Boot
+    Systemd service
+        vi /etc/systemd/system/oled.service
+    
+    [Unit]
+    Description=OLED Display
+
+    [Service]
+    ExecStart=/usr/bin/python3 /usr/bin/oled_test.py
+    Restart=always
+
+    [Install]
+    WantedBy=multi-user.target
+    
+    Commands:
+    
+        systemctl enable oled
+        systemctl start oled
+
+    Architecture
+        
+        SSD1306 OLED
+            ↓
+        I2C (i2c-2)
+            ↓
+        Userspace (Python - luma)
+            ↓
+        Framebuffer buffer (software)
+            ↓
+        Display
+
+    Debug Checklist
+
+        | Check       | Command                          |
+        | ----------- | -------------------------------- |
+        | Detect      | `i2cdetect -y 2`                 |
+        | Node        | `ls /sys/bus/i2c/devices/2-003c` |
+        | Write test  | `i2cset`                         |
+        | Python      | run script                       |
+        | Permissions | `ls /dev/i2c-2`                  |
