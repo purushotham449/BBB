@@ -82,6 +82,8 @@ root@beaglebone-yocto:~# i2cdetect -y -r 2
     🌡 TMP102
         i2cget -y 2 0x48 0x00 w
 
+    echo 2-0048 > /sys/bus/i2c/drivers/tmp102/unbind
+    
     Please refer: BBB/Kernel/Temperature/TMP102/tmp102_setup.txt
 
     ✔ Should return value

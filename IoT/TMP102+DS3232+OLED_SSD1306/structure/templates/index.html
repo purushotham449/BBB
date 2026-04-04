@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>BBBW IoT Dashboard</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+    <style>
+        body {
+            font-family: Arial;
+            text-align: center;
+            background: #0f172a;
+            color: white;
+        }
+
+        .card {
+            background: #1e293b;
+            margin: 20px;
+            padding: 20px;
+            border-radius: 15px;
+        }
+
+        h1 {
+            font-size: 24px;
+        }
+
+        .value {
+            font-size: 28px;
+            color: #38bdf8;
+        }
+    </style>
+</head>
+
+<body>
+
+<h1>📡 BBBW IoT Dashboard</h1>
+
+<div class="card">
+    <h2>Date</h2>
+    <div class="value" id="date">--</div>
+</div>
+
+<div class="card">
+    <h2>Time</h2>
+    <div class="value" id="time">--</div>
+</div>
+
+<div class="card">
+    <h2>Temperature</h2>
+    <div class="value" id="temp">-- °C</div>
+</div>
+
+<script>
+function fetchData() {
+    fetch('/data')
+    .then(res => res.json())
+    .then(data => {
+        document.getElementById("date").innerText = data.date;
+        document.getElementById("time").innerText = data.time;
+        document.getElementById("temp").innerText = data.temperature + " °C";
+    });
+}
+
+setInterval(fetchData, 1000);
+fetchData();
+</script>
+
+</body>
+</html>
