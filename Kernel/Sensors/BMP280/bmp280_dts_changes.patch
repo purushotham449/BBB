@@ -1,0 +1,20 @@
+diff --git a/arch/arm/boot/dts/am335x-boneblack-wireless.dts b/arch/arm/boot/dts/am335x-boneblack-wireless.dts
+index 207d2b63e0eb..abbef312b2ba 100644
+--- a/arch/arm/boot/dts/am335x-boneblack-wireless.dts
++++ b/arch/arm/boot/dts/am335x-boneblack-wireless.dts
+@@ -109,3 +109,24 @@ ls-buf-en-hog {
+ 		line-name = "LS_BUF_EN";
+ 	};
+ };
++
++
++&i2c2 {
++    status = "okay";
++
++	bmp280@76 {
++        compatible = "bosch,bmp280";
++        reg = <0x76>;
++    };
++};
+\ No newline at end of file
+ll
