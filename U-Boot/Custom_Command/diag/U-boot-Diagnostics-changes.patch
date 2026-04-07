@@ -1,0 +1,413 @@
+From 18192fd2acaa8f1ff201de0a87998c0f50580cee Mon Sep 17 00:00:00 2001
+From: Purushotham <purushotham.449@gmail.com>
+Date: Wed, 8 Apr 2026 00:23:09 +0530
+Subject: [PATCH] U-boot Diagnostics changes
+
+---
+ cmd/Kconfig                  |  52 +++++++
+ cmd/Makefile                 |   7 +
+ cmd/cmd_diag.c               | 285 +++++++++++++++++++++++++++++++++++
+ configs/am335x_evm_defconfig |  10 +-
+ 4 files changed, 353 insertions(+), 1 deletion(-)
+ create mode 100644 cmd/cmd_diag.c
+
+diff --git a/cmd/Kconfig b/cmd/Kconfig
+index 02c298fdbe4..b4771afd4c0 100644
+--- a/cmd/Kconfig
++++ b/cmd/Kconfig
+@@ -1696,6 +1696,58 @@ config CMD_BMP
+ 	  the image into RAM, then using this command to look at it or display
+ 	  it.
+ 
++config CMD_DIAG
++    bool "Enable board diagnostics command"
++    depends on CMD_I2C
++    help
++      Enable 'diag' command for board-level diagnostics.
++
++      This command allows checking I2C devices like:
++      - BMP280 (pressure sensor)
++      - TMP102 (temperature sensor)
++      - DS3231 (RTC)
++      - MPU6050 (IMU)
++      - OLED SSD1306 display
++
++      Example usage:
++        diag i2c
++        diag bmp
++        diag tmp
++        diag rtc
++        diag mpu
++        diag oled
++        diag all
++
++config CMD_DIAG_BMP280
++    bool "Enable BMP280 diagnostic"
++    depends on CMD_DIAG
++    help
++      Enable BMP280 sensor diagnostics.
++
++config CMD_DIAG_TMP102
++    bool "Enable TMP102 diagnostic"
++    depends on CMD_DIAG
++    help
++      Enable TMP102 temperature sensor diagnostics.
++
++config CMD_DIAG_DS3231
++    bool "Enable DS3231 RTC diagnostic"
++    depends on CMD_DIAG
++    help
++      Enable DS3231 RTC diagnostics.
++
++config CMD_DIAG_MPU6050
++    bool "Enable MPU6050 diagnostic"
++    depends on CMD_DIAG
++    help
++      Enable MPU6050/MPU6500 IMU diagnostics.
++
++config CMD_DIAG_OLED
++    bool "Enable SSD1306 OLED diagnostic"
++    depends on CMD_DIAG
++    help
++      Enable OLED display diagnostics over I2C.
++
+ config CMD_BOOTCOUNT
+ 	bool "bootcount"
+ 	depends on BOOTCOUNT_LIMIT
+diff --git a/cmd/Makefile b/cmd/Makefile
+index e31ac15ef75..f22ade8fd82 100644
+--- a/cmd/Makefile
++++ b/cmd/Makefile
+@@ -255,3 +255,10 @@ $(obj)/license_data_size.h: $(srctree)/Licenses/gpl-2.0.txt FORCE
+ 	$(call filechk,data_size)
+ 
+ CFLAGS_ethsw.o := -Wno-enum-conversion
++
++obj-$(CONFIG_CMD_DIAG) += cmd_diag.o
++# obj-$(CONFIG_CMD_DIAG_TMP102) += diag_tmp102.o
++# obj-$(CONFIG_CMD_DIAG_DS3231) += diag_ds3231.o
++# obj-$(CONFIG_CMD_DIAG_MPU6050) += diag_mpu6050.o
++# obj-$(CONFIG_CMD_DIAG_BMP280) += diag_bmp280.o
++# obj-$(CONFIG_CMD_DIAG_OLED) += diag_oled.o
+\ No newline at end of file
+diff --git a/cmd/cmd_diag.c b/cmd/cmd_diag.c
+new file mode 100644
+index 00000000000..1327ae3e78a
+--- /dev/null
++++ b/cmd/cmd_diag.c
+@@ -0,0 +1,285 @@
++#include <common.h>
++#include <command.h>
++#include <i2c.h>
++#include <dm.h>
++#include <string.h>
++
++#define I2C_BUS       2
++
++#define BMP280_ADDR   0x76
++#define TMP102_ADDR   0x48
++#define DS3231_ADDR   0x68
++#define MPU6050_ADDR  0x68
++#define OLED_ADDR     0x3C
++
++/* Helper: Get I2C device */
++static int get_i2c_dev(u8 addr, struct udevice **dev)
++{
++    return i2c_get_chip_for_busnum(I2C_BUS, addr, 1, dev);
++}
++
++/* ================= OLED ================= */
++#ifdef CONFIG_CMD_DIAG_OLED
++static int oled_write(u8 control, u8 val)
++{
++    struct udevice *dev;
++    if (get_i2c_dev(OLED_ADDR, &dev))
++        return -1;
++
++    u8 buf[2] = {control, val};
++    return dm_i2c_write(dev, 0x00, buf, 2);
++}
++
++static int oled_cmd(u8 cmd)
++{
++    return oled_write(0x00, cmd);
++}
++
++static int oled_data(u8 data)
++{
++    return oled_write(0x40, data);
++}
++
++static int oled_init(void)
++{
++    printf("Initializing OLED...\n");
++
++    oled_cmd(0xAE);
++    oled_cmd(0xA6);
++    oled_cmd(0xAF);
++
++    return 0;
++}
++
++static void oled_clear(void)
++{
++    int i;
++    for (i = 0; i < 1024; i++)
++        oled_data(0x00);
++}
++
++static void oled_test_pattern(void)
++{
++    int i;
++    for (i = 0; i < 1024; i++)
++        oled_data(0xFF);
++}
++
++static void oled_status(char *msg)
++{
++    oled_clear();
++    printf("OLED: %s\n", msg);
++
++    if (!strcmp(msg, "PASS"))
++        oled_test_pattern();
++}
++#endif
++
++/* ================= BMP280 ================= */
++#ifdef CONFIG_CMD_DIAG_BMP280
++static int bmp280_check(void)
++{
++    struct udevice *dev;
++    u8 id;
++
++    if (get_i2c_dev(BMP280_ADDR, &dev)) {
++        printf("BMP280 not found\n");
++        return -1;
++    }
++
++    if (dm_i2c_read(dev, 0xD0, &id, 1)) {
++        printf("BMP280 read failed\n");
++        return -1;
++    }
++
++    printf("BMP280 Chip ID: 0x%02x\n", id);
++    return 0;
++}
++#endif
++
++/* ================= TMP102 ================= */
++#ifdef CONFIG_CMD_DIAG_TMP102
++static int tmp102_read(void)
++{
++    struct udevice *dev;
++    u8 data[2];
++
++    if (get_i2c_dev(TMP102_ADDR, &dev)) {
++        printf("TMP102 not found\n");
++        return -1;
++    }
++
++    if (dm_i2c_read(dev, 0x00, data, 2)) {
++        printf("TMP102 read failed\n");
++        return -1;
++    }
++
++    int raw = ((data[0] << 8) | data[1]) >> 4;
++
++    /* Integer math instead of float */
++    int temp = (raw * 625) / 10000;
++
++    printf("TMP102 Temp: %d C\n", temp);
++    return 0;
++}
++#endif
++
++/* ================= DS3231 ================= */
++#ifdef CONFIG_CMD_DIAG_DS3231
++static int bcd2bin(u8 val)
++{
++    return (val & 0x0F) + ((val >> 4) * 10);
++}
++
++static int ds3231_read(void)
++{
++    struct udevice *dev;
++    u8 data[7];
++
++    if (get_i2c_dev(DS3231_ADDR, &dev)) {
++        printf("DS3231 not found\n");
++        return -1;
++    }
++
++    if (dm_i2c_read(dev, 0x00, data, 7)) {
++        printf("DS3231 read failed\n");
++        return -1;
++    }
++
++    printf("Date: %02d-%02d-20%02d\n",
++           bcd2bin(data[4]),
++           bcd2bin(data[5]),
++           bcd2bin(data[6]));
++
++    printf("Time: %02d:%02d:%02d\n",
++           bcd2bin(data[2]),
++           bcd2bin(data[1]),
++           bcd2bin(data[0]));
++
++    return 0;
++}
++#endif
++
++/* ================= MPU6050 ================= */
++#ifdef CONFIG_CMD_DIAG_MPU6050
++static int mpu6050_check(void)
++{
++    struct udevice *dev;
++    u8 whoami;
++
++    if (get_i2c_dev(MPU6050_ADDR, &dev)) {
++        printf("MPU6050 not found\n");
++        return -1;
++    }
++
++    if (dm_i2c_read(dev, 0x75, &whoami, 1)) {
++        printf("MPU6050 read failed\n");
++        return -1;
++    }
++
++    printf("MPU WHO_AM_I: 0x%02x\n", whoami);
++
++    if (whoami == 0x68 || whoami == 0x70)
++        printf("MPU6050/6500 detected\n");
++    else
++        printf("Unknown MPU device\n");
++
++    return 0;
++}
++#endif
++
++/* ================= DIAG COMMAND ================= */
++static int do_diag(struct cmd_tbl *cmdtp, int flag, int argc, char * const argv[])
++{
++    if (argc < 2)
++        return CMD_RET_USAGE;
++
++    if (!strcmp(argv[1], "i2c")) {
++        struct udevice *dev;
++        if (!get_i2c_dev(TMP102_ADDR, &dev))
++            printf("I2C device found at 0x48\n");
++        else
++            printf("I2C device not found\n");
++        return 0;
++    }
++
++    if (!strcmp(argv[1], "bmp")) {
++#ifdef CONFIG_CMD_DIAG_BMP280
++        return bmp280_check();
++#else
++        printf("BMP280 disabled\n");
++        return 0;
++#endif
++    }
++
++    if (!strcmp(argv[1], "tmp")) {
++#ifdef CONFIG_CMD_DIAG_TMP102
++        return tmp102_read();
++#else
++        printf("TMP102 disabled\n");
++        return 0;
++#endif
++    }
++
++    if (!strcmp(argv[1], "rtc")) {
++#ifdef CONFIG_CMD_DIAG_DS3231
++        return ds3231_read();
++#else
++        printf("RTC disabled\n");
++        return 0;
++#endif
++    }
++
++    if (!strcmp(argv[1], "mpu")) {
++#ifdef CONFIG_CMD_DIAG_MPU6050
++        return mpu6050_check();
++#else
++        printf("MPU disabled\n");
++        return 0;
++#endif
++    }
++
++    if (!strcmp(argv[1], "oled")) {
++#ifdef CONFIG_CMD_DIAG_OLED
++        oled_init();
++        oled_clear();
++#else
++        printf("OLED disabled\n");
++#endif
++        return 0;
++    }
++
++    if (!strcmp(argv[1], "all")) {
++        int fail = 0;
++
++#ifdef CONFIG_CMD_DIAG_BMP280
++        if (bmp280_check()) fail++;
++#endif
++#ifdef CONFIG_CMD_DIAG_TMP102
++        if (tmp102_read()) fail++;
++#endif
++#ifdef CONFIG_CMD_DIAG_DS3231
++        if (ds3231_read()) fail++;
++#endif
++#ifdef CONFIG_CMD_DIAG_MPU6050
++        if (mpu6050_check()) fail++;
++#endif
++#ifdef CONFIG_CMD_DIAG_OLED
++        oled_init();
++        oled_status(fail ? "FAIL" : "PASS");
++#endif
++
++        printf(fail ? "\nTEST FAILED\n" : "\nALL TESTS PASSED\n");
++        return 0;
++    }
++
++    printf("Unknown command\n");
++    return CMD_RET_FAILURE;
++}
++
++/* ================= HELP ================= */
++U_BOOT_CMD(
++    diag, 2, 1, do_diag,
++    "Board diagnostics",
++    "diag i2c | bmp | tmp | rtc | mpu | oled | all"
++);
+\ No newline at end of file
+diff --git a/configs/am335x_evm_defconfig b/configs/am335x_evm_defconfig
+index 4dc5d0fe347..e6269c18f85 100644
+--- a/configs/am335x_evm_defconfig
++++ b/configs/am335x_evm_defconfig
+@@ -31,7 +31,8 @@ CONFIG_CMD_SPL_NAND_OFS=0x00080000
+ CONFIG_SYS_I2C_EEPROM_ADDR_LEN=2
+ # CONFIG_CMD_FLASH is not set
+ CONFIG_CMD_NAND=y
+-# CONFIG_CMD_SETEXPR is not set
++CONFIG_CMD_SETEXPR=y
++CONFIG_CMD_SETEXPR_FMT=y
+ CONFIG_BOOTP_DNS2=y
+ CONFIG_CMD_MTDPARTS=y
+ CONFIG_MTDIDS_DEFAULT="nand0=nand.0"
+@@ -101,3 +102,10 @@ CONFIG_WDT=y
+ CONFIG_DYNAMIC_CRC_TABLE=y
+ CONFIG_RSA=y
+ CONFIG_LZO=y
++CONFIG_CMD_DIAG=y
++CONFIG_CMD_DIAG_BMP280=y
++CONFIG_CMD_DIAG_TMP102=y
++CONFIG_CMD_DIAG_DS3231=y
++CONFIG_CMD_DIAG_MPU6050=y
++CONFIG_CMD_DIAG_OLED=y
++CONFIG_SYS_I2C=y
+\ No newline at end of file
+-- 
+2.34.1
+
