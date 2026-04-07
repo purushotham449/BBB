@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>BMP280 Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+
+<h2>BMP280 Sensor Dashboard</h2>
+
+<p>Temp: <span id="temp"></span> °C</p>
+<p>Pressure: <span id="pressure"></span> hPa</p>
+<p>Altitude: <span id="alt"></span> m</p>
+<p>Time: <span id="time"></span></p>
+
+<canvas id="chart"></canvas>
+
+<script>
+let tempData = [];
+
+function fetchData() {
+    fetch('/data')
+    .then(res => res.json())
+    .then(data => {
+        document.getElementById("temp").innerText = data.temp.toFixed(2);
+        document.getElementById("pressure").innerText = data.pressure.toFixed(2);
+        document.getElementById("alt").innerText = data.alt.toFixed(2);
+        document.getElementById("time").innerText = data.time;
+
+        tempData.push(data.temp);
+        if (tempData.length > 20) tempData.shift();
+
+        chart.update();
+    });
+}
+
+const ctx = document.getElementById('chart');
+const chart = new Chart(ctx, {
+    type: 'line',
+    data: {
+        labels: Array(20).fill(""),
+        datasets: [{
+            label: 'Temperature',
+            data: tempData
+        }]
+    }
+});
+
+setInterval(fetchData, 1000);
+</script>
+
+</body>
+</html>
