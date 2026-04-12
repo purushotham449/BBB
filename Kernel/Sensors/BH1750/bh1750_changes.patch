@@ -1,0 +1,24 @@
+diff --git a/arch/arm/boot/dts/am335x-boneblack-wireless.dts b/arch/arm/boot/dts/am335x-boneblack-wireless.dts
+index 207d2b63e0eb..9af25c3f99fc 100644
+--- a/arch/arm/boot/dts/am335x-boneblack-wireless.dts
++++ b/arch/arm/boot/dts/am335x-boneblack-wireless.dts
+@@ -109,3 +109,29 @@ ls-buf-en-hog {
+ 		line-name = "LS_BUF_EN";
+ 	};
+ };
++
++
++&i2c2 {
++    status = "okay";
++	clock-frequency = <50000>;  // 50kHz
++
++	oled@3c {
++        compatible = "solomon,ssd1306";
++        reg = <0x3c>;
++    };
++
++    bh1750@23 {
++        compatible = "rohm,bh1750";
++        reg = <0x23>;
++    };
++};
